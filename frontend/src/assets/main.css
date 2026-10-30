@@ -1,0 +1,16 @@
+@import "tailwindcss";
+
+body {
+  font-family: "Lato", sans-serif;
+  font-weight: 400;
+  font-style: normal;
+  background-color: #2d3039;
+}
+/* Force the body font on every element, overriding any font-* utility. `body *` (not `*`) so body keeps its own declaration above. */
+body * {
+  font-family: inherit !important;
+}
+
+@theme{
+  --font-navbar: "Momo Trust Display", "sans-serif";
+}
