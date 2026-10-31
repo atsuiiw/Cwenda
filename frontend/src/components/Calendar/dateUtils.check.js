@@ -1,6 +1,6 @@
 // Self-check: TZ=America/New_York node src/components/Calendar/dateUtils.check.js
 import assert from "node:assert/strict";
-import { addDays, monthGrid, visibleRange, step, layoutDay, minutesInDay, overlaps, toLocalInput } from "./dateUtils.js";
+import { addDays, monthGrid, visibleRange, step, layoutDay, minutesInDay, overlaps, toLocalInput, relativeTime, nextUp } from "./dateUtils.js";
 
 // datetime-local round trip is exact, including on the DST change day.
 for (const d of [new Date(2026, 9, 30, 9, 5), new Date(2026, 10, 1, 13, 45), new Date(2026, 0, 1, 0, 0)]) {
@@ -44,5 +44,25 @@ const byId = Object.fromEntries(laid.map((s) => [s.id, s]));
 assert.deepEqual([byId.A.col, byId.A.cols], [0, 2]);
 assert.deepEqual([byId.B.col, byId.B.cols], [1, 2]);
 assert.deepEqual([byId.C.col, byId.C.cols], [0, 1]);
+
+// Countdown text.
+const MIN = 60_000;
+assert.equal(relativeTime(30 * 1000), "1m");
+assert.equal(relativeTime(12 * MIN), "12m");
+assert.equal(relativeTime(125 * MIN), "2h 5m");
+assert.equal(relativeTime((3 * 1440 + 4 * 60) * MIN), "3d 4h");
+
+// Next up: in-progress beats later; submitted MCV skipped; past ignored; empty -> null.
+const t = (h) => new Date(2026, 9, 31, h);
+const now = t(14);
+const past = { id: "past", start: t(9), end: t(10) };
+const live = { id: "live", start: t(13), end: t(15) };
+const later = { id: "later", start: t(16), end: t(17) };
+const doneMcv = { id: "done", start: t(14), end: t(14), mcv_submitted: true };
+const todoMcv = { id: "todo", start: t(18), end: t(18), mcv_submitted: false };
+assert.equal(nextUp([later, past, live, doneMcv], now).id, "live");
+assert.equal(nextUp([later, todoMcv, doneMcv], now).id, "later");
+assert.equal(nextUp([past, doneMcv], now), null);
+assert.equal(nextUp([], now), null);
 
 console.log("dateUtils ok");

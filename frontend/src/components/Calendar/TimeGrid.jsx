@@ -12,7 +12,7 @@ const hourLines = {
 };
 
 // Shared by Week (7 days) and Day (1 day) views.
-const TimeGrid = ({ days, events, onSelectEvent }) => {
+const TimeGrid = ({ days, events, onSelectEvent, scrollToHour = 8 }) => {
     const scrollRef = useRef(null);
     const [now, setNow] = useState(() => new Date());
 
@@ -21,10 +21,10 @@ const TimeGrid = ({ days, events, onSelectEvent }) => {
         return () => clearInterval(id);
     }, []);
 
-    // Open scrolled to ~8 AM, like Apple Calendar.
+    // Open scrolled to ~8 AM by default, like Apple Calendar.
     useEffect(() => {
-        scrollRef.current.scrollTop = 8 * HOUR - 8;
-    }, []);
+        scrollRef.current.scrollTop = Math.max(0, scrollToHour * HOUR - 8);
+    }, [scrollToHour]);
 
     // Events lasting a day or more go in the all-day strip; shorter ones are clipped per day.
     const allDay = events.filter((e) => e.end - e.start >= DAY_MS);
@@ -123,7 +123,7 @@ const TimeGrid = ({ days, events, onSelectEvent }) => {
                                                 borderColor: `hsl(${hue} 70% 55%)`,
                                             }}
                                         >
-                                            <span className="block truncate font-semibold">{e.event_name || "(No title)"}</span>
+                                            <span className={`block truncate font-semibold ${e.mcv_submitted ? "text-white/60 line-through" : ""}`}>{e.event_name || "(No title)"}</span>
                                             {height >= 32 && (
                                                 <span className="block truncate text-white/70">{timeFormat.format(e.start)}</span>
                                             )}

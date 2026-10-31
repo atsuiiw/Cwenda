@@ -1,7 +1,42 @@
 import { Router } from "express";
 import pool from '../db/db.js';
 import { parseTagIds, parseMatchMode, mapPgError, syncEventTags, checkTimestampOffsets, parseTagName } from '../controller/controller.js';
+import { fetchAssignments, toEventFields } from '../controller/mcv.js';
+import {
+    createLoginLimiter, isAuthenticated, isConfigured, SESSION_MAX_AGE, sessionCookie, signSession, verifyPassword,
+} from '../controller/auth.js';
 const router = Router();
+
+// ---- Auth (the only routes requireAuth lets through without a session) ----
+const loginLimiter = createLoginLimiter();
+
+router.get('/session', (req, res) => {
+    res.json({ configured: isConfigured(), authenticated: isConfigured() && isAuthenticated(req) });
+});
+
+router.post('/login', async (req, res) => {
+    if (!isConfigured()) {
+        return res.status(503).json({ message: 'No password set. Run `npm run set-password` in backend/.', code: 'auth_not_configured' });
+    }
+    const wait = loginLimiter.retryAfterMs();
+    if (wait > 0) {
+        const seconds = Math.ceil(wait / 1000);
+        res.set('Retry-After', String(seconds));
+        return res.status(429).json({ message: `Too many wrong passwords. Try again in ${seconds}s.` });
+    }
+    if (!(await verifyPassword(req.body?.password, process.env.APP_PASSWORD_HASH))) {
+        loginLimiter.fail();
+        return res.status(401).json({ message: 'Wrong password', code: 'bad_password' });
+    }
+    loginLimiter.succeed();
+    res.set('Set-Cookie', sessionCookie(signSession(process.env.SESSION_SECRET), SESSION_MAX_AGE));
+    res.json({ ok: true });
+});
+
+router.post('/logout', (req, res) => {
+    res.set('Set-Cookie', sessionCookie('', 0));
+    res.json({ ok: true });
+});
 
 
 router.get('/getEvent', async (req,res) => {
@@ -49,6 +84,8 @@ router.get('/getEvent', async (req,res) => {
                 e.name AS event_name,
                 e.description,
                 e.associate_links,
+                e.mcv_ref,
+                e.mcv_submitted,
                 e.start_time,
                 e.end_time,
                 COALESCE(
@@ -83,7 +120,7 @@ router.get('/getEvent/:id', async (req,res) => {
         }
 
         const eventResult = await pool.query(
-            `SELECT id, name, description, associate_links, start_time, end_time, timezone
+            `SELECT id, name, description, associate_links, start_time, end_time, timezone, mcv_ref, mcv_submitted
              FROM "event"
              WHERE id = $1;`,
             [eventId]
@@ -459,6 +496,94 @@ router.delete('/deleteTag/:id', async (req, res) => {
         res.status(200).json({ deleted: result.rows[0] });
     } catch (err) {
         res.status(500).json({ message: err.message });
+    }
+});
+
+// One import at a time; a double click would otherwise run mcv twice.
+let mcvImportRunning = false;
+
+// Import all MyCourseVille assignments (current semester) as zero-length
+// events at their due time. Re-imports match on mcv_ref and refresh the title
+// and due time and submitted state only, so the user's own tags, links and notes stay.
+router.post('/mcv/import', async (req, res) => {
+    if (mcvImportRunning) {
+        return res.status(409).json({ message: "Import already running" });
+    }
+    mcvImportRunning = true;
+    let client;
+    try {
+        const result = await fetchAssignments();
+        if (result.error) {
+            return res.status(result.error.status).json(result.error.body);
+        }
+
+        const items = [];
+        const skipped = [];
+        for (const a of result.assignments) {
+            const fields = toEventFields(a);
+            if (fields) items.push(fields);
+            else skipped.push({ ref: a?.ref ?? null, title: a?.title ?? null });
+        }
+
+        client = await pool.connect();
+        await client.query('BEGIN');
+
+        // Find-or-create the "MCV" tag and one tag per course number.
+        const tagNames = [...new Set(['MCV', ...items.map(i => i.course_no).filter(Boolean)])];
+        await client.query(
+            `INSERT INTO "tag"(name) SELECT unnest($1::text[]) ON CONFLICT (name) DO NOTHING;`,
+            [tagNames]
+        );
+        const tagRows = await client.query(
+            `SELECT id, name FROM "tag" WHERE name = ANY($1::text[]);`,
+            [tagNames]
+        );
+        const tagIdByName = new Map(tagRows.rows.map(r => [r.name, r.id]));
+
+        const events = [];
+        for (const item of items) {
+            // xmax = 0 only on a freshly inserted row, so it tells created from updated.
+            const upsert = await client.query(
+                `INSERT INTO "event"(name, associate_links, start_time, end_time, timezone, mcv_ref, mcv_submitted)
+                 VALUES ($1, $2, $3, $3, 'Asia/Bangkok', $4, $5)
+                 ON CONFLICT (mcv_ref) DO UPDATE
+                     SET name = EXCLUDED.name,
+                         start_time = EXCLUDED.start_time,
+                         end_time = EXCLUDED.end_time,
+                         mcv_submitted = EXCLUDED.mcv_submitted
+                 RETURNING id, name, start_time, mcv_ref, mcv_submitted, (xmax = 0) AS created;`,
+                [item.name, JSON.stringify(item.links), item.due, item.mcv_ref, item.submitted]
+            );
+            const row = upsert.rows[0];
+            if (row.created) {
+                const tagIds = [tagIdByName.get('MCV'), tagIdByName.get(item.course_no)].filter(Boolean);
+                const { error } = await syncEventTags(client, row.id, tagIds);
+                if (error) throw new Error(error.message);
+            }
+            events.push(row);
+        }
+
+        await client.query('COMMIT');
+        const created = events.filter(e => e.created).length;
+        res.status(200).json({
+            created,
+            updated: events.length - created,
+            submitted: events.filter(e => e.mcv_submitted).length,
+            skipped: skipped.length,
+            skippedItems: skipped,
+            events,
+        });
+    } catch (err) {
+        if (client) await client.query('ROLLBACK').catch(() => {});
+        const mapped = mapPgError(err);
+        if (mapped) {
+            return res.status(mapped.status).json(mapped.body);
+        }
+        console.error("ERROR CAUGHT:", err);
+        res.status(500).json({ message: err.message });
+    } finally {
+        client?.release();
+        mcvImportRunning = false;
     }
 });
 

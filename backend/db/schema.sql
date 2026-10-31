@@ -40,3 +40,12 @@ CREATE TABLE IF NOT EXISTS "junction" (
 -- The composite PK already indexes this lookup by event_id; kept as an
 -- explicit index for the reverse direction (tag -> its events).
 CREATE INDEX IF NOT EXISTS "junction_tag_id_idx" ON "junction"(tag_id);
+
+-- MyCourseVille import (POST /api/mcv/import): the assignment's mcv ref, e.g.
+-- "mcv:assignment:81802:2084321". Unique so re-imports update instead of
+-- duplicating; NULL for events made in Cwenda (Postgres allows many NULLs).
+ALTER TABLE "event" ADD COLUMN IF NOT EXISTS mcv_ref TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS "event_mcv_ref_key" ON "event"(mcv_ref);
+-- Whether the MCV assignment has been submitted (mcv's submitted_at present).
+-- Refreshed on every import; NULL for events made in Cwenda.
+ALTER TABLE "event" ADD COLUMN IF NOT EXISTS mcv_submitted BOOLEAN;

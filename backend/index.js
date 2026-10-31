@@ -1,4 +1,6 @@
 import express from 'express';
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
 import cors from 'cors';
 
@@ -22,19 +24,29 @@ import pool from './db/db.js';
 
 // import router
 import router from './router/router.js';
+import { requireAuth } from './controller/auth.js';
 
-app.get('/', (req,res) => {
-  return res.send("Server is Ready");
-})
+// Every /api route needs a session except /login, /logout and /session.
+app.use('/api', requireAuth, router);
 
-app.use('/api',router);
+// Deployed mode: serve the built frontend (npm run build in frontend/) from this same port.
+// Any non-/api GET falls back to index.html so client routes like /calendar load directly.
+const DIST = fileURLToPath(new URL('../frontend/dist', import.meta.url));
+if (existsSync(`${DIST}/index.html`)) {
+  app.use(express.static(DIST));
+  app.use((req, res, next) => {
+    if (req.method !== 'GET' || req.path === '/api' || req.path.startsWith('/api/')) return next();
+    res.sendFile(`${DIST}/index.html`);
+  });
+}
+
 
 app.use((err, req, res, next) => {
   console.error("MIDDLEWARE ERROR:", err);
   res.status(err.status || 500).json({ message: err.message });
 });
 
-app.listen(PORT, async () => {
+app.listen(PORT, process.env.HOST, async () => {
     try {
         await pool.query('SELECT 1');
         console.log("Connected at " + PORT);

@@ -55,7 +55,7 @@ const MonthView = ({ cursor, events, onSelectEvent, onSelectDay }) => {
                                     className="h-2 w-2 shrink-0 rounded-full"
                                     style={{ background: `hsl(${eventHue(e)} 70% 55%)` }}
                                 />
-                                <span className="truncate">{e.event_name || "(No title)"}</span>
+                                <span className={`truncate ${e.mcv_submitted ? "text-white/50 line-through" : ""}`}>{e.event_name || "(No title)"}</span>
                                 <span className="ml-auto hidden shrink-0 text-white/50 lg:inline">
                                     {sameDay(e.start, day) ? timeFormat.format(e.start) : ""}
                                 </span>

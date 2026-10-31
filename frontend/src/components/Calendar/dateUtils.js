@@ -83,3 +83,20 @@ export const toLocalInput = (d) =>
 
 // Stable color per event from its first tag; untagged events use Apple blue.
 export const eventHue = (e) => (e.tags?.[0] ? (e.tags[0].id * 47) % 360 : 211);
+
+// Countdown text: "3d 4h", "2h 5m", "12m". Rounds up so it never says "0m".
+export const relativeTime = (ms) => {
+    const mins = Math.max(1, Math.ceil(ms / 60_000));
+    const d = Math.floor(mins / 1440);
+    const h = Math.floor((mins % 1440) / 60);
+    const m = mins % 60;
+    if (d) return `${d}d ${h}h`;
+    if (h) return `${h}h ${m}m`;
+    return `${m}m`;
+};
+
+// The event happening now, else the next one to start. Submitted MCV assignments are done, so skipped.
+export const nextUp = (events, now) =>
+    events
+        .filter((e) => !e.mcv_submitted && (e.end > now || e.start >= now))
+        .sort((a, b) => a.start - b.start)[0] ?? null;

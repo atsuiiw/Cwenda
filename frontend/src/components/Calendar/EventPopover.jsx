@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import { eventHue } from "./dateUtils";
 import { toLinks } from "../../api";
+import SubmittedBadge from "../Event/SubmittedBadge";
 
 const rangeFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
 // Only http(s) links become clickable, so a stored javascript: URL can't run.
@@ -33,7 +34,10 @@ const EventPopover = ({ event, onClose }) => {
                     />
                     <h2 className="text-lg font-semibold">{event.event_name || "(No title)"}</h2>
                 </div>
-                <p className="text-sm text-white/70">{rangeFormat.formatRange(event.start, event.end)}</p>
+                <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-sm text-white/70">{rangeFormat.formatRange(event.start, event.end)}</p>
+                    <SubmittedBadge submitted={event.mcv_submitted} />
+                </div>
                 {event.tags.length > 0 && (
                     <ul className="flex flex-wrap gap-1.5">
                         {event.tags.map((t) => (

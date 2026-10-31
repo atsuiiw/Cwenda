@@ -1,25 +1,13 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, withDates } from "../api";
+import { api, importMcv as runMcvImport, withDates } from "../api";
 import TagManager from "../components/Event/TagManager";
+import SubmittedBadge from "../components/Event/SubmittedBadge";
+import { dayLabel, timeLabel } from "../components/Event/format";
 import { addDays, eventHue, sameDay, startOfDay } from "../components/Calendar/dateUtils";
 
 const DAYS_AHEAD = 90;
 const DAYS_BACK = 30;
-const dayFormat = new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric" });
-const timeFormat = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
-const dateTimeFormat = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
-
-const dayLabel = (day, today) => {
-    if (sameDay(day, today)) return "Today";
-    if (sameDay(day, addDays(today, 1))) return "Tomorrow";
-    if (sameDay(day, addDays(today, -1))) return "Yesterday";
-    return dayFormat.format(day);
-};
-
-const timeLabel = (e) =>
-    sameDay(e.start, e.end) ? timeFormat.formatRange(e.start, e.end) : dateTimeFormat.formatRange(e.start, e.end);
-
 function EventList() {
     // Fixed at mount so the fetch effect doesn't re-run every render.
     const [range] = useState(() => {
@@ -40,6 +28,8 @@ function EventList() {
     const [managing, setManaging] = useState(false);
     // Bumped after tag edits so tags and events (which carry tag names) reload.
     const [version, setVersion] = useState(0);
+    const [importing, setImporting] = useState(false);
+    const [importResult, setImportResult] = useState(null); // { ok, text }
 
     useEffect(() => {
         api("/getAllTags")
@@ -87,10 +77,23 @@ function EventList() {
         groups.get(key).items.push(e);
     }
 
+    const importMcv = async () => {
+        setImporting(true);
+        setImportResult(null);
+        try {
+            setImportResult({ ok: true, text: await runMcvImport() });
+            setVersion((v) => v + 1);
+        } catch (err) {
+            setImportResult({ ok: false, text: err.message });
+        } finally {
+            setImporting(false);
+        }
+    };
+
     const toggle = (id) => setFilter((f) => (f.includes(id) ? f.filter((x) => x !== id) : [...f, id]));
 
     return (
-        <div className="mx-auto flex max-w-3xl flex-col gap-4 text-white">
+        <div className="mx-auto flex max-w-5xl flex-col gap-4 text-white">
             <header className="flex flex-wrap items-center gap-3">
                 <h1 className="text-2xl font-semibold">{showPast ? "Past Events" : "Events"}</h1>
                 <button
@@ -110,6 +113,15 @@ function EventList() {
                     className="rounded-md bg-white/10 px-3 py-1.5 text-sm hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-white"
                 >
                     Manage Tags
+                </button>
+                <button
+                    type="button"
+                    onClick={importMcv}
+                    disabled={importing}
+                    aria-busy={importing}
+                    className="rounded-md bg-white/10 px-3 py-1.5 text-sm hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-white disabled:opacity-60"
+                >
+                    {importing ? "Importing…" : "Import from MCV"}
                 </button>
                 <Link
                     to="/event/new"
@@ -148,6 +160,15 @@ function EventList() {
                 </div>
             )}
 
+            {importResult && (
+                <p
+                    role={importResult.ok ? "status" : "alert"}
+                    className={`rounded-md px-3 py-2 text-sm ${importResult.ok ? "bg-[#30d158]/15" : "bg-[#ff453a]/20"}`}
+                >
+                    {importResult.text}
+                </p>
+            )}
+
             {error && (
                 <p role="alert" className="rounded-md bg-[#ff453a]/20 px-3 py-2 text-sm">
                     Couldn't load events: {error}
@@ -177,7 +198,12 @@ function EventList() {
                                         style={{ background: `hsl(${eventHue(e)} 70% 55%)` }}
                                     />
                                     <span className="flex min-w-0 flex-col">
-                                        <span className="truncate font-medium">{e.event_name || "(No title)"}</span>
+                                        <span className="flex min-w-0 items-center gap-2">
+                                            <span className={`truncate font-medium ${e.mcv_submitted ? "text-white/50 line-through" : ""}`}>
+                                                {e.event_name || "(No title)"}
+                                            </span>
+                                            <SubmittedBadge submitted={e.mcv_submitted} />
+                                        </span>
                                         <span className="text-xs text-white/60">{timeLabel(e)}</span>
                                     </span>
                                     <span className="ml-auto hidden shrink-0 gap-1 sm:flex">

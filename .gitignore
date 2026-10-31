@@ -143,3 +143,10 @@ dist
 .svelte-kit
 
 # End of https://www.toptal.com/developers/gitignore/api/node
+
+# Local secrets: .env backups from set-password, any .env variant
+.env.*
+!.env.example
+
+# macOS
+.DS_Store

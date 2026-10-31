@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { NavLink } from "react-router-dom";
+import { logout } from "../../api";
 
 const Navbar = () => {
     const [isOpen, setIsOpen] = useState(false);
@@ -68,6 +69,16 @@ const Navbar = () => {
                     >
                         EVENT
                     </NavLink>
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setIsOpen(false);
+                            logout();
+                        }}
+                        className={`${linkClassName({ isActive: false })} text-left text-white/70 hover:text-white`}
+                    >
+                        LOG OUT
+                    </button>
                 </div>
             </div>
         </nav>

@@ -8,7 +8,11 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "nodemon index.js"
+    "dev": "nodemon index.js",
+    "set-password": "node scripts/set-password.js",
+    "deploy": "bash scripts/deploy.sh",
+    "undeploy": "bash scripts/undeploy.sh",
+    "logs": "tail -n 50 -f ~/Library/Logs/Cwenda/server.log"
   },
   "dependencies": {
     "cors": "^2.8.6",
